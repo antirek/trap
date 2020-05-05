@@ -1,0 +1,24 @@
+html
+    head
+        link(rel='stylesheet', href='/static/bootstrap/dist/css/bootstrap.min.css')
+        script(src='/static/jquery/dist/jquery.min.js')
+        script(src='/static/bootstrap/dist/js/bootstrap.min.js')
+        script(src="/socket.io/socket.io.js")
+    body
+      h1 chat
+      
+      video#local_video(controls autoplay playsinline)
+
+      video#remote_video(controls autoplay playsinline)
+
+
+      fieldset#fs_connection
+        legend Connection
+        div
+          button#btn_connect Connect
+          button#btn_register Register
+          button#btn_callto Call to
+          span#connection_status
+
+
+      script(src="/public/client.js")

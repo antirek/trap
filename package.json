@@ -1,0 +1,33 @@
+{
+  "name": "trap",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/antirek/trap.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/antirek/trap/issues"
+  },
+  "homepage": "https://github.com/antirek/trap#readme",
+  "dependencies": {
+    "bootstrap": "^4.4.1",
+    "config": "^3.3.1",
+    "express": "^4.17.1",
+    "jquery": "^3.5.1",
+    "mediasoup": "^3.5.9",
+    "mediasoup-client": "^3.6.5",
+    "pug": "^2.0.4",
+    "socket.io": "^2.3.0"
+  },
+  "devDependencies": {
+    "webpack": "^4.43.0",
+    "webpack-cli": "^3.3.11"
+  }
+}
