@@ -188,11 +188,11 @@ async function runMediasoupWorker() {
     setTimeout(() => process.exit(1), 2000);
   });
 
-/*
+
   const mediaCodecs = config.mediasoup.router.mediaCodecs;
   mediasoupRouter = await worker.createRouter({ mediaCodecs });
 
-  */
+  
 }
 
 async function createWebRtcTransport() {

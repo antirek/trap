@@ -42,7 +42,7 @@ async function connect() {
     transports: ['websocket'],
   };
 
-  const serverUrl = 'https://192.168.1.39:3000';
+  const serverUrl = 'https://vc.ofee.ru:3000';
   socket = io(serverUrl, opts);
   socket.request = promise(socket);
 
