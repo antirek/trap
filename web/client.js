@@ -12,6 +12,8 @@ $btnCallto.addEventListener('click', callto);
 let device;
 let socket;
 
+let side = 'B';
+
 const urlParams = new URLSearchParams(window.location.search);
 const userId = urlParams.get('userId');
 
@@ -32,6 +34,8 @@ async function register() {
 async function callto() {
   const response = await socket.request('callto', {userId: 'lala2'});
   console.log('callto', response);
+
+  side = 'A';
   // publish()
 }
 

@@ -8,16 +8,167 @@ const config = require('config');
 let worker;
 let webServer;
 let socketServer;
-let producer;
+
+/*let producer;
 let consumer;
 let producerTransport;
 let consumerTransport;
+*/
 let mediasoupRouter;
 
 
 let registry = [];
 
 let connections = [];
+
+
+class Connection {
+  constructor({worker, config}) {
+    const mediaCodecs = config.mediasoup.router.mediaCodecs;
+    this.Router = await worker.createRouter({ mediaCodecs });
+
+    this.id = 'test';
+    this.state = 'init';
+  }
+
+  getInfo() {
+    return {
+      id: this.id,
+      from: this.A.name,
+      fromSocket: this.A.socketId,
+      to: this.B.name,
+      toSocket: this.B.socketId,
+    }
+  }
+
+  getFromSocket () {
+    return this.A.socketId;
+  }
+
+  getToSocket () {
+    return this.B.socketId;
+  }
+
+  setState(newState) {
+    this.state = newState;
+  }
+
+  setA({name, socketId}) {
+    this.A.name = name;
+    this.A.socketId = socketId;
+  }
+
+  setB({name, socketId}) {
+    this.B.name = name;
+    this.B.socketId = socketId;
+  }
+
+  async createAProducerTransport() {
+    this.A.producerTransport = await createWebRtcTransport();
+    return this.A.producerTransport;
+  }
+
+  async createBProducerTransport() {
+    this.B.producerTransport = await createWebRtcTransport();
+    return this.B.producerTransport;
+  }
+
+  async createAConsumerTransport() {
+    this.A.consumerTransport = await createWebRtcTransport();
+    return this.A.producerTransport;
+  }
+
+  async createBConsumerTransport() {
+    this.B.consumerTransport = await createWebRtcTransport();
+    return this.B.producerTransport;
+  }
+
+  async connectAProducerTransport (data) {
+    return await this.A.producerTransport.connect({ dtlsParameters: data.dtlsParameters });
+  }
+
+  async connectBProducerTransport (data) {
+    return await this.B.producerTransport.connect({ dtlsParameters: data.dtlsParameters });
+  }
+
+  async connectAConsumerTransport (data) {
+    return await this.A.consumerTransport.connect({ dtlsParameters: data.dtlsParameters });
+  }
+
+  async connectBConsumerTransport (data) {
+    return await this.B.consumerTransport.connect({ dtlsParameters: data.dtlsParameters });
+  }
+
+
+  async function createWebRtcTransport() {
+    const {
+      maxIncomingBitrate,
+      initialAvailableOutgoingBitrate
+    } = config.mediasoup.webRtcTransport;
+
+    const transport = await this.Router.createWebRtcTransport({
+      listenIps: config.mediasoup.webRtcTransport.listenIps,
+      enableUdp: true,
+      enableTcp: true,
+      preferUdp: true,
+      initialAvailableOutgoingBitrate,
+    });
+    if (maxIncomingBitrate) {
+      try {
+        await transport.setMaxIncomingBitrate(maxIncomingBitrate);
+      } catch (error) {
+      }
+    }
+    return {
+      transport,
+      params: {
+        id: transport.id,
+        iceParameters: transport.iceParameters,
+        iceCandidates: transport.iceCandidates,
+        dtlsParameters: transport.dtlsParameters
+      },
+    };
+  }
+
+  getRTPCapabilities() {
+    return this.Router.rtpCapabilities;
+  }
+
+
+  async function createConsumer(consumerTransport, producer, rtpCapabilities) {
+    console.log('producer', producer);
+    if (!this.Router.canConsume(
+      {
+        producerId: producer.id,
+        rtpCapabilities,
+      })
+    ) {
+      console.error('can not consume');
+      return;
+    }
+    try {
+      consumer = await consumerTransport.consume({
+        producerId: producer.id,
+        rtpCapabilities,
+        paused: producer.kind === 'video',
+      });
+    } catch (error) {
+      console.error('consume failed', error);
+      return;
+    }    
+
+    return {
+      producerId: producer.id,
+      id: consumer.id,
+      kind: consumer.kind,
+      rtpParameters: consumer.rtpParameters,
+      type: consumer.type,
+      producerPaused: consumer.producerPaused
+    };
+  }
+
+
+}
 
 
 (async () => {
@@ -86,28 +237,22 @@ async function runSocketServer() {
       const a = registry.find(item => item.socketId === socket.id);
 
       if (!b) return;
-      const connection = {
-        id: 'test',
-        from: a.userId, 
-        fromSocket: a.socketId,
-        to: b.userId,
-        toSocket: b.socketId,
-        state: 'init',
-      };
+      const connection = new Connection({worker, config});
       connections.push(connection);
-      socketServer.to(b.socketId).emit('callto', connection);
+      socketServer.to(b.socketId).emit('callto', connection.getInfo());
       
-      callback('callto_resp', connection);
+      callback('callto_resp', connection.getInfo());
     });
 
     socket.on('accept', (data, callback) => {
-      const connection = connections.find(item => item.id === data.id);
+      const connection = connections.find(conn => conn.getInfo().id === data.id);
       console.log('connection', connection);
       if (!connection) return;
-      socketServer.to(connection.fromSocket).emit('publish');
+
+      socketServer.to(connection.getFromSocket()).emit('publish');
       setTimeout(()=>{
         console.log('timeout out')
-        socketServer.to(connection.toSocket).emit('subscribe');
+        socketServer.to(connection.getToSocket()).emit('subscribe');
       }, 5000)
     })
 
@@ -116,15 +261,17 @@ async function runSocketServer() {
     });
 
     socket.on('getRouterRtpCapabilities', (data, callback) => {
+      const connection = connections.find(conn => conn.getInfo().id === data.id);
       console.log('get rtp capabilities from mediasource', data);
-      callback(mediasoupRouter.rtpCapabilities);
+
+      callback(connection.getRTPCapabilities());
     });
 
-    socket.on('createProducerTransport', async (data, callback) => {
+    socket.on('createAProducerTransport', async (data, callback) => {
+      const connection = connections.find(conn => conn.getFromSocket() === socket.id);
       console.log('data', data);
       try {
-        const { transport, params } = await createWebRtcTransport();
-        producerTransport = transport;
+        const { transport, params } = await connection.createAProducerTransport();
         callback(params);
       } catch (err) {
         console.error(err);
@@ -132,10 +279,11 @@ async function runSocketServer() {
       }
     });
 
-    socket.on('createConsumerTransport', async (data, callback) => {
+    socket.on('createBProducerTransport', async (data, callback) => {
+      const connection = connections.find(conn => conn.getToSocket() === socket.id);
+      console.log('data', data);
       try {
-        const { transport, params } = await createWebRtcTransport();
-        consumerTransport = transport;
+        const { transport, params } = await connection.createBProducerTransport();
         callback(params);
       } catch (err) {
         console.error(err);
@@ -143,19 +291,61 @@ async function runSocketServer() {
       }
     });
 
-    socket.on('connectProducerTransport', async (data, callback) => {
-      await producerTransport.connect({ dtlsParameters: data.dtlsParameters });
+    socket.on('createAConsumerTransport', async (data, callback) => {
+      const connection = connections.find(conn => conn.getFromSocket() === socket.id);
+      try {
+        const { transport, params } = await connection.createAConsumerTransport();
+        callback(params);
+      } catch (err) {
+        console.error(err);
+        callback({ error: err.message });
+      }
+    });
+
+    socket.on('createBConsumerTransport', async (data, callback) => {
+      const connection = connections.find(conn => conn.getToSocket() === socket.id);
+      try {
+        const { transport, params } = await connection.createBConsumerTransport();
+        callback(params);
+      } catch (err) {
+        console.error(err);
+        callback({ error: err.message });
+      }
+    });
+
+    socket.on('connectAProducerTransport', async (data, callback) => {
+      const connection = connections.find(conn => conn.getFromSocket() === socket.id);
+      await connection.connectAProducerTransport(data);
       callback();
     });
 
-    socket.on('connectConsumerTransport', async (data, callback) => {
-      await consumerTransport.connect({ dtlsParameters: data.dtlsParameters });
+    socket.on('connectAConsumerTransport', async (data, callback) => {
+      const connection = connections.find(conn => conn.getFromSocket() === socket.id);
+      await connection.connectAConsumerTransport(data);
       callback();
     });
 
-    socket.on('produce', async (data, callback) => {
-      console.log('produce...');
+    socket.on('connectBProducerTransport', async (data, callback) => {
+      const connection = connections.find(conn => conn.getToSocket() === socket.id);
+      await connection.connectBProducerTransport(data);
+      callback();
+    });
+
+    socket.on('connectBConsumerTransport', async (data, callback) => {
+      const connection = connections.find(conn => conn.getToSocket() === socket.id);
+      await connection.connectBConsumerTransport(data);
+      callback();
+    });
+
+
+    socket.on('produceA', async (data, callback) => {
+      console.log('produce A...');
       const {kind, rtpParameters} = data;
+
+      const conn = connections.find(conn => conn.getFromSocket() === socket.id);
+      const producerTransport = conn.fromProducerTransport;
+      
+
       producer = await producerTransport.produce({ kind, rtpParameters });
       console.log('produce in produce', producer);
       callback({ id: producer.id });
@@ -188,77 +378,5 @@ async function runMediasoupWorker() {
     setTimeout(() => process.exit(1), 2000);
   });
 
-/*
-  const mediaCodecs = config.mediasoup.router.mediaCodecs;
-  mediasoupRouter = await worker.createRouter({ mediaCodecs });
-
-  */
 }
 
-async function createWebRtcTransport() {
-  const {
-    maxIncomingBitrate,
-    initialAvailableOutgoingBitrate
-  } = config.mediasoup.webRtcTransport;
-
-  const transport = await mediasoupRouter.createWebRtcTransport({
-    listenIps: config.mediasoup.webRtcTransport.listenIps,
-    enableUdp: true,
-    enableTcp: true,
-    preferUdp: true,
-    initialAvailableOutgoingBitrate,
-  });
-  if (maxIncomingBitrate) {
-    try {
-      await transport.setMaxIncomingBitrate(maxIncomingBitrate);
-    } catch (error) {
-    }
-  }
-  return {
-    transport,
-    params: {
-      id: transport.id,
-      iceParameters: transport.iceParameters,
-      iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters
-    },
-  };
-}
-
-async function createConsumer(producer, rtpCapabilities) {
-  console.log('producer', producer);
-  if (!mediasoupRouter.canConsume(
-    {
-      producerId: producer.id,
-      rtpCapabilities,
-    })
-  ) {
-    console.error('can not consume');
-    return;
-  }
-  try {
-    consumer = await consumerTransport.consume({
-      producerId: producer.id,
-      rtpCapabilities,
-      paused: producer.kind === 'video',
-    });
-  } catch (error) {
-    console.error('consume failed', error);
-    return;
-  }
-
-  /*
-  if (consumer.type === 'simulcast') {
-    await consumer.setPreferredLayers({ spatialLayer: 2, temporalLayer: 2 });
-  }
-  */
-
-  return {
-    producerId: producer.id,
-    id: consumer.id,
-    kind: consumer.kind,
-    rtpParameters: consumer.rtpParameters,
-    type: consumer.type,
-    producerPaused: consumer.producerPaused
-  };
-}
