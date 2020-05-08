@@ -19,6 +19,190 @@ let registry = [];
 
 let connections = [];
 
+class Connection {
+  constructor () {
+    this.id = 'test';
+    this.state = 'init';
+  }
+
+  async appendPeerA (peerA) {
+    this.peerA = peerA;
+  }
+
+  async appendPeerB (peerB) {
+    this.peerB = peerB;
+  }
+
+  getPeerA () {
+    return this.peerA;
+  }
+
+  getPeerB () {
+    return this.peerB;
+  }
+
+}
+
+
+class Peer  {
+
+  constructor ({userId, router, socket}) {
+    this.router = router;
+    this.socket = socket;
+    this.userId = userId;
+
+    this.initSocket();
+  }
+
+  setOtherPeer (peer) {
+    this.otherPeer = peer;
+  }
+
+  getProducer () {
+    return this.producer;
+  }
+
+  initSocket () {
+    this.socket.on('createProducerTransport', async (data, callback) => {
+      console.log('createProducerTransport data', data);
+      try {
+        const { transport, params } = await this.createWebRtcTransport();
+        this.producerTransport = transport;
+        callback(params);
+      } catch (err) {
+        console.error(err);
+        callback({ error: err.message });
+      }
+    });
+
+    this.socket.on('createConsumerTransport', async (data, callback) => {
+      console.log('createConsumerTransport data', data);
+      try {
+        const { transport, params } = await this.createWebRtcTransport();
+        this.consumerTransport = transport;
+        callback(params);
+      } catch (err) {
+        console.error(err);
+        callback({ error: err.message });
+      }
+    });
+
+    this.socket.on('connectProducerTransport', async (data, callback) => {
+      await this.producerTransport.connect({ dtlsParameters: data.dtlsParameters });
+      callback();
+    });
+
+    this.socket.on('connectConsumerTransport', async (data, callback) => {
+      await this.consumerTransport.connect({ dtlsParameters: data.dtlsParameters });
+      callback();
+    });
+
+    this.socket.on('produce', async (data, callback) => {
+      console.log('produce...');
+      const {kind, rtpParameters} = data;
+      this.producer = await this.producerTransport.produce({ kind, rtpParameters });
+      console.log('produce in produce', this.producer);
+      callback({ id: this.producer.id });
+    });
+
+    this.socket.on('consume', async (data, callback) => {
+      const producer = this.otherPeer.getProducer();
+      callback(await this.consume(producer, data.rtpCapabilities));
+    });
+  }
+
+  getSocket () {
+    return this.socket;
+  }
+
+  getUserId () {
+    return this.userId;
+  }
+
+/*
+  async createConsumerTransport () {
+    const { transport, params } = await createWebRtcTransport();
+    this.consumerTransport = transport;
+    return {transport, params};
+  }
+
+  async  createProducerTransport () {
+    const { transport, params } = await createWebRtcTransport();
+    this.producerTransport = transport;
+    return {transport, params};
+  }
+
+  async  produce (data) {
+    const {kind, rtpParameters} = data;
+    this.producer = await producerTransport.produce({ kind, rtpParameters });
+    return this.producer;
+  }
+*/
+
+  async  consume (producer, rtpCapabilities) {
+    console.log('producer', producer);
+    if (!this.router.canConsume(
+      {
+        producerId: producer.id,
+        rtpCapabilities,
+      })
+    ) {
+      console.error('can not consume');
+      return;
+    }
+    try {
+      this.consumer = await this.consumerTransport.consume({
+        producerId: producer.id,
+        rtpCapabilities,
+        paused: producer.kind === 'video',
+      });
+    } catch (error) {
+      console.error('consume failed', error);
+      return;
+    }    
+
+    return {
+      producerId: producer.id,
+      id: this.consumer.id,
+      kind: this.consumer.kind,
+      rtpParameters: this.consumer.rtpParameters,
+      type: this.consumer.type,
+      producerPaused: this.consumer.producerPaused
+    };
+  }
+
+  async createWebRtcTransport() {
+    const {
+      maxIncomingBitrate,
+      initialAvailableOutgoingBitrate
+    } = config.mediasoup.webRtcTransport;
+
+    const transport = await mediasoupRouter.createWebRtcTransport({
+      listenIps: config.mediasoup.webRtcTransport.listenIps,
+      enableUdp: true,
+      enableTcp: true,
+      preferUdp: true,
+      initialAvailableOutgoingBitrate,
+    });
+    if (maxIncomingBitrate) {
+      try {
+        await transport.setMaxIncomingBitrate(maxIncomingBitrate);
+      } catch (error) {
+      }
+    }
+    return {
+      transport,
+      params: {
+        id: transport.id,
+        iceParameters: transport.iceParameters,
+        iceCandidates: transport.iceCandidates,
+        dtlsParameters: transport.dtlsParameters
+      },
+    };
+  }
+}
+
+
 
 (async () => {
   try {
@@ -72,9 +256,20 @@ async function runSocketServer() {
       console.log('client disconnected');
     });
 
+    socket.on('getRouterRtpCapabilities', (data, callback) => {
+      console.log('get rtp capabilities from mediasource', data);
+      callback(mediasoupRouter.rtpCapabilities);
+    });
+
     socket.on('register', (data, callback) => {
       console.log('register', data);
-      registry.push({'socketId': socket.id, 'userId': data.userId});
+
+      registry.push({
+        socketId: socket.id, 
+        userId: data.userId,
+        socket,
+        });
+
       console.log('registry', registry);
       callback('registered', data);
     });
@@ -86,6 +281,22 @@ async function runSocketServer() {
       const a = registry.find(item => item.socketId === socket.id);
 
       if (!b) return;
+
+      const peerA  = new Peer({
+        router: mediasoupRouter, 
+        userId: a.userId,
+        socket: a.socket,
+      });
+
+      const peerB  = new Peer({
+        router: mediasoupRouter, 
+        userId: b.userId,
+        socket: b.socket,
+      });
+
+
+      console.log(' ---- 1');
+      /*
       const connection = {
         id: 'test',
         from: a.userId, 
@@ -93,21 +304,33 @@ async function runSocketServer() {
         to: b.userId,
         toSocket: b.socketId,
         state: 'init',
+        peerA,
       };
+      */ 
+
+      const connection = new Connection();
+      connection.appendPeerA(peerA);
+      connection.appendPeerB(peerB);
+      peerA.setOtherPeer(peerB);
+      peerB.setOtherPeer(peerA);
+
+      console.log(' ---- 2')
       connections.push(connection);
-      socketServer.to(b.socketId).emit('callto', connection);
+      console.log(' ---- 3')
+      socketServer.to(b.socketId).emit('callto', {id: connection.id});
+      console.log(' ---- 4')
       
-      callback('callto_resp', connection);
+      callback('callto_resp', {id: connection.id});
     });
 
     socket.on('accept', (data, callback) => {
       const connection = connections.find(item => item.id === data.id);
       console.log('connection', connection);
       if (!connection) return;
-      socketServer.to(connection.fromSocket).emit('publish');
-      setTimeout(()=>{
+      connection.getPeerA().getSocket().emit('publish');
+      setTimeout(()=> {
         console.log('timeout out')
-        socketServer.to(connection.toSocket).emit('subscribe');
+        connection.getPeerB().getSocket().emit('subscribe');
       }, 5000)
     })
 
@@ -115,11 +338,8 @@ async function runSocketServer() {
       console.error('client connection error', err);
     });
 
-    socket.on('getRouterRtpCapabilities', (data, callback) => {
-      console.log('get rtp capabilities from mediasource', data);
-      callback(mediasoupRouter.rtpCapabilities);
-    });
-
+    
+    /*
     socket.on('createProducerTransport', async (data, callback) => {
       console.log('data', data);
       try {
@@ -172,6 +392,7 @@ async function runSocketServer() {
       await consumer.resume();
       callback();
     });
+    */
   });
 }
 
@@ -188,77 +409,7 @@ async function runMediasoupWorker() {
     setTimeout(() => process.exit(1), 2000);
   });
 
-
   const mediaCodecs = config.mediasoup.router.mediaCodecs;
   mediasoupRouter = await worker.createRouter({ mediaCodecs });
-
-  
 }
 
-async function createWebRtcTransport() {
-  const {
-    maxIncomingBitrate,
-    initialAvailableOutgoingBitrate
-  } = config.mediasoup.webRtcTransport;
-
-  const transport = await mediasoupRouter.createWebRtcTransport({
-    listenIps: config.mediasoup.webRtcTransport.listenIps,
-    enableUdp: true,
-    enableTcp: true,
-    preferUdp: true,
-    initialAvailableOutgoingBitrate,
-  });
-  if (maxIncomingBitrate) {
-    try {
-      await transport.setMaxIncomingBitrate(maxIncomingBitrate);
-    } catch (error) {
-    }
-  }
-  return {
-    transport,
-    params: {
-      id: transport.id,
-      iceParameters: transport.iceParameters,
-      iceCandidates: transport.iceCandidates,
-      dtlsParameters: transport.dtlsParameters
-    },
-  };
-}
-
-async function createConsumer(producer, rtpCapabilities) {
-  console.log('producer', producer);
-  if (!mediasoupRouter.canConsume(
-    {
-      producerId: producer.id,
-      rtpCapabilities,
-    })
-  ) {
-    console.error('can not consume');
-    return;
-  }
-  try {
-    consumer = await consumerTransport.consume({
-      producerId: producer.id,
-      rtpCapabilities,
-      paused: producer.kind === 'video',
-    });
-  } catch (error) {
-    console.error('consume failed', error);
-    return;
-  }
-
-  /*
-  if (consumer.type === 'simulcast') {
-    await consumer.setPreferredLayers({ spatialLayer: 2, temporalLayer: 2 });
-  }
-  */
-
-  return {
-    producerId: producer.id,
-    id: consumer.id,
-    kind: consumer.kind,
-    rtpParameters: consumer.rtpParameters,
-    type: consumer.type,
-    producerPaused: consumer.producerPaused
-  };
-}

@@ -47,9 +47,7 @@ async function connect() {
   socket.request = promise(socket);
 
   socket.on('connect', async () => {
-    // $txtConnection.innerHTML = 'Connected';
-    // $fsPublish.disabled = false;
-    // $fsSubscribe.disabled = false;
+
 
     const data = await socket.request('getRouterRtpCapabilities');
     console.log('----', data);
