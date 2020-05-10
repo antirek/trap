@@ -225,6 +225,7 @@ async function subscribe() {
         break;
 
       case 'connected':
+        console.log('connected');
         document.querySelector('#remote_video').srcObject = await stream;
         await socket.request('resume');
         //$txtSubscription.innerHTML = 'subscribed';

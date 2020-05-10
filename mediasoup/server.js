@@ -154,7 +154,7 @@ class Peer  {
       this.consumer = await this.consumerTransport.consume({
         producerId: producer.id,
         rtpCapabilities,
-        paused: producer.kind === 'video',
+        // paused: producer.kind === 'video',
       });
     } catch (error) {
       console.error('consume failed', error);
@@ -173,7 +173,7 @@ class Peer  {
 
   async createWebRtcTransport() {
     const {
-      maxIncomingBitrate,
+      // maxIncomingBitrate,
       initialAvailableOutgoingBitrate
     } = config.mediasoup.webRtcTransport;
 
@@ -184,12 +184,14 @@ class Peer  {
       preferUdp: true,
       initialAvailableOutgoingBitrate,
     });
+    /*
     if (maxIncomingBitrate) {
       try {
         await transport.setMaxIncomingBitrate(maxIncomingBitrate);
       } catch (error) {
       }
     }
+    */
     return {
       transport,
       params: {
@@ -296,23 +298,11 @@ async function runSocketServer() {
 
 
       console.log(' ---- 1');
-      /*
-      const connection = {
-        id: 'test',
-        from: a.userId, 
-        fromSocket: a.socketId,
-        to: b.userId,
-        toSocket: b.socketId,
-        state: 'init',
-        peerA,
-      };
-      */ 
-
       const connection = new Connection();
-      connection.appendPeerA(peerA);
-      connection.appendPeerB(peerB);
       peerA.setOtherPeer(peerB);
       peerB.setOtherPeer(peerA);
+      connection.appendPeerA(peerA);
+      connection.appendPeerB(peerB);      
 
       console.log(' ---- 2')
       connections.push(connection);
@@ -326,10 +316,13 @@ async function runSocketServer() {
     socket.on('accept', (data, callback) => {
       const connection = connections.find(item => item.id === data.id);
       console.log('connection', connection);
+
       if (!connection) return;
       connection.getPeerA().getSocket().emit('publish');
+      connection.getPeerB().getSocket().emit('publish');
       setTimeout(()=> {
         console.log('timeout out')
+        connection.getPeerA().getSocket().emit('subscribe');
         connection.getPeerB().getSocket().emit('subscribe');
       }, 5000)
     })
