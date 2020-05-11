@@ -8,12 +8,7 @@ const config = require('config');
 let worker;
 let webServer;
 let socketServer;
-let producer;
-let consumer;
-let producerTransport;
-let consumerTransport;
 let mediasoupRouter;
-
 
 let registry = [];
 
@@ -43,9 +38,7 @@ class Connection {
 
 }
 
-
 class Peer  {
-
   constructor ({userId, router, socket}) {
     this.router = router;
     this.socket = socket;
@@ -119,26 +112,6 @@ class Peer  {
     return this.userId;
   }
 
-/*
-  async createConsumerTransport () {
-    const { transport, params } = await createWebRtcTransport();
-    this.consumerTransport = transport;
-    return {transport, params};
-  }
-
-  async  createProducerTransport () {
-    const { transport, params } = await createWebRtcTransport();
-    this.producerTransport = transport;
-    return {transport, params};
-  }
-
-  async  produce (data) {
-    const {kind, rtpParameters} = data;
-    this.producer = await producerTransport.produce({ kind, rtpParameters });
-    return this.producer;
-  }
-*/
-
   async  consume (producer, rtpCapabilities) {
     console.log('producer', producer);
     if (!this.router.canConsume(
@@ -173,7 +146,7 @@ class Peer  {
 
   async createWebRtcTransport() {
     const {
-      // maxIncomingBitrate,
+      maxIncomingBitrate,
       initialAvailableOutgoingBitrate
     } = config.mediasoup.webRtcTransport;
 
@@ -184,14 +157,14 @@ class Peer  {
       preferUdp: true,
       initialAvailableOutgoingBitrate,
     });
-    /*
+
     if (maxIncomingBitrate) {
       try {
         await transport.setMaxIncomingBitrate(maxIncomingBitrate);
       } catch (error) {
       }
     }
-    */
+
     return {
       transport,
       params: {
@@ -331,61 +304,6 @@ async function runSocketServer() {
       console.error('client connection error', err);
     });
 
-    
-    /*
-    socket.on('createProducerTransport', async (data, callback) => {
-      console.log('data', data);
-      try {
-        const { transport, params } = await createWebRtcTransport();
-        producerTransport = transport;
-        callback(params);
-      } catch (err) {
-        console.error(err);
-        callback({ error: err.message });
-      }
-    });
-
-    socket.on('createConsumerTransport', async (data, callback) => {
-      try {
-        const { transport, params } = await createWebRtcTransport();
-        consumerTransport = transport;
-        callback(params);
-      } catch (err) {
-        console.error(err);
-        callback({ error: err.message });
-      }
-    });
-
-    socket.on('connectProducerTransport', async (data, callback) => {
-      await producerTransport.connect({ dtlsParameters: data.dtlsParameters });
-      callback();
-    });
-
-    socket.on('connectConsumerTransport', async (data, callback) => {
-      await consumerTransport.connect({ dtlsParameters: data.dtlsParameters });
-      callback();
-    });
-
-    socket.on('produce', async (data, callback) => {
-      console.log('produce...');
-      const {kind, rtpParameters} = data;
-      producer = await producerTransport.produce({ kind, rtpParameters });
-      console.log('produce in produce', producer);
-      callback({ id: producer.id });
-
-      // inform clients about new producer
-      // socket.broadcast.emit('newProducer');
-    });
-
-    socket.on('consume', async (data, callback) => {
-      callback(await createConsumer(producer, data.rtpCapabilities));
-    });
-
-    socket.on('resume', async (data, callback) => {
-      await consumer.resume();
-      callback();
-    });
-    */
   });
 }
 

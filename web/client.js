@@ -47,8 +47,6 @@ async function connect() {
   socket.request = promise(socket);
 
   socket.on('connect', async () => {
-
-
     const data = await socket.request('getRouterRtpCapabilities');
     console.log('----', data);
     const q = await loadDevice(data);
