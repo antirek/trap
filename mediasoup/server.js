@@ -22,10 +22,19 @@ class Connection {
 
   async appendPeerA (peerA) {
     this.peerA = peerA;
+    this.exchangePeers();
   }
 
   async appendPeerB (peerB) {
     this.peerB = peerB;
+    this.exchangePeers();
+  }
+
+  exchangePeers () {
+    if (this.peerA && this.peerB) {
+      this.peerA.setOtherPeer(this.peerB);
+      this.peerB.setOtherPeer(this.peerA);
+    }
   }
 
   getPeerA () {
@@ -95,6 +104,7 @@ class Peer  {
       const {kind, rtpParameters} = data;
       this.producer = await this.producerTransport.produce({ kind, rtpParameters });
       console.log('produce in produce', this.producer);
+      this.otherPeer.getSocket().emit('subscribe');
       callback({ id: this.producer.id });
     });
 
@@ -272,10 +282,8 @@ async function runSocketServer() {
 
       console.log(' ---- 1');
       const connection = new Connection();
-      peerA.setOtherPeer(peerB);
-      peerB.setOtherPeer(peerA);
       connection.appendPeerA(peerA);
-      connection.appendPeerB(peerB);      
+      connection.appendPeerB(peerB);
 
       console.log(' ---- 2')
       connections.push(connection);
@@ -292,12 +300,7 @@ async function runSocketServer() {
 
       if (!connection) return;
       connection.getPeerA().getSocket().emit('publish');
-      connection.getPeerB().getSocket().emit('publish');
-      setTimeout(()=> {
-        console.log('timeout out')
-        connection.getPeerA().getSocket().emit('subscribe');
-        connection.getPeerB().getSocket().emit('subscribe');
-      }, 5000)
+      connection.getPeerB().getSocket().emit('publish');      
     })
 
     socket.on('connect_error', (err) => {

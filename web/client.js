@@ -186,7 +186,7 @@ async function getUserMedia(transport, isWebcam) {
   let stream;
   try {
     stream = isWebcam ?
-      await navigator.mediaDevices.getUserMedia({ audio: true, video: true }) :
+      await navigator.mediaDevices.getUserMedia({ video: true }):
       await navigator.mediaDevices.getDisplayMedia({ video: true });
   } catch (err) {
     console.error('getUserMedia() failed:', err.message);
