@@ -23,7 +23,7 @@
     "jquery": "^3.5.1",
     "mediasoup": "^3.5.9",
     "mediasoup-client": "^3.6.5",
-    "pug": "^2.0.4",
+    "pug": "^3.0.1",
     "socket.io": "^2.3.0"
   },
   "devDependencies": {
